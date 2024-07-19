@@ -1,0 +1,109 @@
+name: Deploy Preview
+
+on: [pull_request]
+
+env:
+  NEON_DATABASE_USERNAME: ${{ secrets.NEON_DATABASE_USERNAME }} # change this to your database username
+  GH_TOKEN: ${{ secrets.GH_TOKEN }} # Required for commenting on pull requests for private repos
+  NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # You can generate a an API key in your account settings
+  NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }} # You can find this in your project settings
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  GITHUB_ID: ${{ secrets.GH_ID }}
+  GITHUB_SECRET: ${{ secrets.GH_SECRET }}
+  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+  STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+  NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+  NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+  NEXT_PUBLIC_GTM_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_GTM_MEASUREMENT_ID }}
+  NEXT_PUBLIC_BREVO_CLIENT_KEY: ${{ secrets.NEXT_PUBLIC_BREVO_CLIENT_KEY }}
+  NEXT_PUBLIC_BREVO_ENABLED: ${{ secrets.NEXT_PUBLIC_BREVO_ENABLED }}
+  NODE_ENV: "test"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1 # Skip downloading during pnpm install
+  PLAYWRIGHT_BROWSERS_PATH: 0 # Places binaries to node_modules/@playwright/test
+  PLAYWRIGHT_TESTING: "true"
+
+jobs:
+  deploy-preview:
+    permissions: write-all
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v3
+        name: Install pnpm
+        with:
+          version: 8
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps
+
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v8
+
+      - name: Create Neon Branch
+        id: create-branch
+        uses: neondatabase/create-branch-action@v4
+        with:
+          project_id: ${{ env.NEON_PROJECT_ID }}
+          parent: dev2 # optional (defaults to your primary branch)
+          branch_name: preview/pr-${{ github.event.number }}-${{ steps.branch-name.outputs.current_branch }}
+          username: ${{ env.NEON_DATABASE_USERNAME }}
+          api_key: ${{ env.NEON_API_KEY }}
+
+      - name: Run Migrations
+        run: |
+          touch .env
+
+          echo DATABASE_URL=${{ steps.create-branch.outputs.db_url_with_pooler }}?sslmode=require >> .env
+          echo DIRECT_URL=${{ steps.create-branch.outputs.db_url }}?sslmode=require >> .env
+
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Run e2e tests
+        run: npx playwright test
+
+      - name: Install Vercel CLI
+        run: pnpm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ env.VERCEL_TOKEN }}
+
+      - name: Deploy Preview to Vercel
+        id: deploy
+        run: echo preview_url=$(vercel deploy --token=${{ env.VERCEL_TOKEN }}) >> $GITHUB_OUTPUT
+
+      - name: Comment on Pull Request
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          GITHUB_TOKEN: ${{ env.GH_TOKEN }}
+          message: |
+            Vercel Preview URL :rocket: : ${{ steps.deploy.outputs.preview_url }}
+            Neon branch :elephant: : https://console.neon.tech/app/projects/${{ env.NEON_PROJECT_ID }}/branches/${{ steps.create-branch.outputs.branch_id }}
