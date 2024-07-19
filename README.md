@@ -2,7 +2,7 @@
 
 C'est un projet qui permet d'automatiser la création de base de données, des tests et de déployer des versions de ton projet sur Vercel.
 
-Je te conseille de visionner cette vidéo si tu ne l'a pas déjà fait : [![Tutoriel Github Actions : Pipeline CI/CD](https://www.media.codympia.com/wp-content/uploads/2024/07/tutoriel-github-actions-pipeline-ci-cd.webp)](https://youtu.be/lPwSfw6bB_U)
+Je te conseille de visionner cette vidéo si tu ne l'a pas déjà fait : [![Tutoriel Github Actions : Pipeline CI/CD](https://www.media.codympia.com/wp-content/uploads/2024/07/tutoriel-github-actions-pipeline-ci-cd.webp)](https://youtu.be/WcISI96Wljo)
 
 ## En quoi consiste cette pipeline ?
 
